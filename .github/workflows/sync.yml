@@ -1,0 +1,55 @@
+name: Sync Cloudflare R2 to GitHub Repository
+on:
+  schedule:
+    - cron: '0 0 * * *' # 每天 UTC 时间 00:00 运行
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  sync-r2-to-repo:
+    runs-on: ubuntu-latest
+    steps:
+      # 检出目标仓库
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 安装 Rclone
+      - name: Install Rclone
+        run: |
+          curl https://rclone.org/install.sh | sudo bash
+
+      # 配置 Rclone
+      - name: Configure Rclone
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf << EOF
+          [r2]
+          type = s3
+          provider = Cloudflare
+          access_key_id = $R2_ACCESS_KEY_ID
+          secret_access_key = $R2_SECRET_ACCESS_KEY
+          endpoint = $R2_ENDPOINT
+          acl = private
+          EOF
+
+      # 同步 R2 存储到仓库目录
+      - name: Sync R2 to Repository
+        run: |
+          rclone sync r2:$R2_BUCKET ./r2-data --progress
+        env:
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+
+      # 提交更改到 GitHub 仓库
+      - name: Commit and Push Changes
+        run: |
+          git config --global user.name 'GitHub Action'
+          git config --global user.email 'action@github.com'
+          git add .
+          git diff-index --quiet HEAD || git commit -m "Sync files from Cloudflare R2"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
